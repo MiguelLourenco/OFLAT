@@ -688,14 +688,12 @@ let addNode cy node ?(x = Random.int 1399) ?(y = Random.int 299) isStart isFinal
       if (isFinal = true) then
         if (isStart = true) then
           (add_node ~pos:(100, 200) cy node "" "SUCCESS" node;
-          (elementId cy node)##lock;
           addEdge cy ("transparent", symb " ", node) )
         else
           add_node cy ~pos:(x, y) node "" "SUCCESS" node
       else 
         if (isStart = true) then
           (add_node cy ~pos:(100, 200) node "" "NOT" node;
-          (elementId cy node)##lock;
           addEdge cy ("transparent", symb " ", node) )
         else 
           add_node cy ~pos:(x, y) node "" "NOT" node
@@ -715,6 +713,7 @@ let removeFinal cy name =
 let removeEdge cy source symb target =
   let nId = (source ^ target) in
   let getEdge = cy##getElementById (Js.string nId) in
+  JS.log(getEdge);
   cy##remove(getEdge)
   (*let magic = Js.Unsafe.coerce getEdge in
   let k = magic##data##.label in 
@@ -737,6 +736,15 @@ let removeEdge cy source symb target =
   if (String.length !g > 0) then
     add_edge cy ~id:nId source target !g*)
 
+let removeInitialEdge cy oldInit =
+  removeEdge cy "transparent" (symb " ") (state oldInit)
+
+let addInitialEdge cy newInit =
+  addEdge cy ("transparent", symb " ", newInit)
+
+let switchInitial cy oldInit newInit =
+  removeInitialEdge cy oldInit;
+  addInitialEdge cy newInit 
 let destroyGraph cy =
   cy##destroy()
 

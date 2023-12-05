@@ -33,7 +33,7 @@ struct
 
     let string s =
       Js.string s
-s
+
     let log j =
       ignore (console##log j)
 

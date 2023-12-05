@@ -64,7 +64,7 @@ open Util
       val listOtherButtons = ["testing"; "generate"; "fitGraph"; "editModel"; "exportModel"]
 
       method locked : bool = false
-	    method addNode (x : int) (y : int) (st: state) : unit = failwith "addNode"
+	    method addNode (x : int) (y : int) (initial : bool) (final : bool): unit = failwith "addNode"
       method eliminateNode (st: state) : unit = failwith "eliminateNode"
       method startGraph : unit = failwith "startGraph"
       method defineExample : unit = failwith "defineExample"
@@ -78,7 +78,8 @@ open Util
       method eliminateTransition ((c1: state), (c2: string), (c3: state)): unit = failwith "eliminateTransition"
       method defineMinimize (listColors: string array) (number : int) : unit = failwith "minimize"
       method addFinalNode (x : int) (y : int) (st: state): unit = failwith "addFinalNode"
-      method turnFinalNode (st: state): unit = failwith "turnFinalNode"
+      method turnNodeFinal (st: state): unit = failwith "turnNodeFinal"
+      method turnNodeInitial (st: state): unit = failwith "turnNodeInitial"
       method removeFinalNode (st: state): unit = failwith "removeFinalNode"
       method addInitialNode (st: state) : unit = failwith "addInitialNode"
       method accept (st:string) : bool Lwt.t = failwith "accept"
@@ -247,15 +248,19 @@ class faController (fa: FiniteAutomatonGraphics.model) (s: bool)=
     method getModel = 
       myFA#toDisplayString "solution"
 
-	  method addNode x y st : unit = 
+	  method addNode x y initial final: unit = 
       self#operationFA "add Node";
-      JS.log myFA#representation.states;
-      if (Set.belongs st myFA#representation.states) then 
-        (JS.alertStr (Lang.i18nAlertExists ()))
-      else 
-        (myFA <- myFA#addNode st false;
-        Cytoscape.addNode self#getCy st ~x:x ~y:y false false;
-        self#defineInformationBox;)
+      let promptResult = (JS.prompt (Lang.i18nTextEnterState ()) "A") in
+      match Js.Opt.to_option promptResult with
+      | None -> ()
+      | Some v -> let st = (Js.to_string v) in
+                  JS.log myFA#representation.states;
+                  if (Set.belongs st myFA#representation.states) then 
+                    (JS.alertStr (Lang.i18nAlertExists ()))
+                  else 
+                    (myFA <- myFA#addNode st false;
+                    Cytoscape.addNode self#getCy st ~x:x ~y:y initial final;
+                    self#defineInformationBox;)
 
     method setTitle = 
       oneBox self#getCy_opt;
@@ -336,7 +341,7 @@ class faController (fa: FiniteAutomatonGraphics.model) (s: bool)=
         else 
           JS.alertStr ((Lang.i18nAlertTheTransition ()) ^ "(" ^ v1 ^ ", " ^ symb2str c3 ^ ", " ^ v2 ^ ")" ^ (Lang.i18nAlertDoNotExists ()))
     
-     method turnFinalNode node =
+     method turnNodeFinal node =
       self#operationFA "make node final";
       if (Set.belongs node myFA#representation.acceptStates) then
           (JS.alertStr (Lang.i18nAlertAlreadyFinal ()))
@@ -807,21 +812,15 @@ class faController (fa: FiniteAutomatonGraphics.model) (s: bool)=
     method defineInformationBox =
       let infoBox = HtmlPageClient.defineInformationBox side in
       let deter = myTM#isDeterministic in 
-        Util.println ["deter"];
         HtmlPageClient.getDeterminim deter infoBox;
       let useful = myTM#areAllStatesUseful in
-      Util.println ["useful"];
       let uStates = myTM#getUselessStates in 
-        Util.println ["uStates"];
         HtmlPageClient.getHasUselessStates useful uStates infoBox;
       let nStates = myTM#numberStates in 
-        Util.println ["nStates"];
         HtmlPageClient.getNumberStates nStates infoBox;
       let nTransitions = myTM#numberTransitions in
-        Util.println ["nTransitions"];
         HtmlPageClient.getNumberTransitions nTransitions infoBox;
       let isLB = myTM#isLB in
-        Util.println ["isLB"];
         HtmlPageClient.getIsLinearBounded isLB infoBox;
 
     (* TODO *)
@@ -836,6 +835,25 @@ class faController (fa: FiniteAutomatonGraphics.model) (s: bool)=
       List.iter (fun el -> HtmlPageClient.disableButton el) listOnlyAutomataButtons;
       List.iter (fun el -> HtmlPageClient.enableButton el) listOnlyTMButtons;
       List.iter (fun el -> HtmlPageClient.enableButton el) listOtherButtons
+
+    method private checkForSimulation : bool = 
+      if self#getTM#isSimulating then 
+        (
+          JS.confirm (Lang.i18nLeaveSimulationToEdit())
+        )
+      else 
+        (
+          true
+        )
+    
+    method private resetAndRedraw =
+      let cy = self#getCy in   
+      Cytoscape.resetFaElems cy;
+      myTM#drawExample cy;
+      self#defineInformationBox
+      
+    method private drawNode x y node =
+      self#defineInformationBox
     
     method editModel = 
       !ListenersTM.editModelListener();
@@ -895,203 +913,245 @@ class faController (fa: FiniteAutomatonGraphics.model) (s: bool)=
       myTM#back self#getCy;
       self#updateScreenSentence
 
-    method checkForSimulation func = 
-      if self#getTM#isSimulating then 
-        (
-          let confResult = (JS.confirm i18nLeaveSimulationToEdit) in
-          if confResult then 
-            (
-              self#changeToEditMode;
-              func
-            )
-          else ()
-        )
-      else 
-        (
-          self#changeToEditMode;
-          func
-        )
-
-    method addNode x y node : unit = 
+    method addNode x y initial final: unit = 
       self#operationTM "add Node";
-      let addNodeLogic x y node =
-        if (myTM#hasState node) then 
-          (
-            JS.alertStr (Lang.i18nAlertExists ())
-          )
-        else 
-          ( 
-              myTM <- myTM#addNode node;
-              Cytoscape.addNode self#getCy node ~x:x ~y:y false false;
-              self#defineInformationBox
-          )
-      in
-      self#checkForSimulation (addNodeLogic x y node)
 
+      let result = self#checkForSimulation in
+      if result then 
+        (          
+          let promptResult = (JS.prompt (Lang.i18nTextEnterState ()) "A") in
+          match Js.Opt.to_option promptResult with
+          | None -> ()
+          | Some v -> 
+              let node = (Js.to_string v) in
+              if (myTM#hasState node) then 
+                (
+                  JS.alertStr (Lang.i18nAlertExists ())
+                )
+              else 
+                ( 
+                  self#changeToEditMode;
 
-    method addInitialNode node =
-      self#operationTM "make node initial";
-      if (myTM#hasState node) then
-        (
-          JS.alertStr (Lang.i18nAlertExists ())
-        )
-      else 
-        (
-          myTM <- (myTM#addInitialNode node);
-          let cy = self#getCy in   
-          Cytoscape.resetFaElems cy;
-          myTM#drawExample cy;
-          self#defineInformationBox;
-          if self#getTM#isSimulating then self#changeToEditMode else ()
-        )
+                  if (initial) then 
+                    (
+                      myTM <- myTM#addInitialNode node;
 
-    method addFinalNode x y node =
-      self#operationTM "add final node";
-      if (myTM#hasState node) then
-        (
-          JS.alertStr (Lang.i18nAlertExists ())
+                      Cytoscape.resetFaElems self#getCy;
+                      self#defineExample;
+                      self#defineInformationBox
+                    )
+                  else 
+                    (
+                      if (final) then
+                        (
+                          myTM <- myTM#addFinalNode node
+                        )
+                      else 
+                        (
+                          myTM <- myTM#addNode node
+                        );
+
+                      Cytoscape.addNode self#getCy node ~x:x ~y:y false final;
+                      self#defineInformationBox
+                    )
+                )
         )
-      else 
-        (
-          myTM <- myTM#addFinalNode node;
-          Cytoscape.addNode self#getCy ~x:x ~y:y node false true;
-          self#defineInformationBox;
-          if self#getTM#isSimulating then self#changeToEditMode else ()
-        )
+      else ()
 
     method eliminateNode node =
       self#operationTM "eliminate node";
-      if (not (myTM#hasState node)) then 
-        (
-          JS.alertStr (Lang.i18nAlertUnexistentState ())
-        )
-      else if (myTM#isInitial node) then 
-        (
-          JS.alertStr (Lang.i18nAlertDelete ()) 
-        )
-      else
-        (
-          let eliminateNodeTransitions (a, b, c) node = 
-            if (a = node || c = node) then
-              ( 
-                self#eliminateTransition (a, b, c);
-              ) in 
-          myTM <- myTM#eliminateNode node;
-          Set.iter (fun (a,b,c,d,e) -> (eliminateNodeTransitions (a, myTM#makeLabel b d e,c) node)) myTM#representation.transitions;
-          Cytoscape.removeNode self#getCy node;
-          self#defineInformationBox;
-          if self#getTM#isSimulating then self#changeToEditMode else ()
-        )
 
-    method turnFinalNode node =
+      let result = self#checkForSimulation in
+      if result then 
+        ( 
+          if (not (myTM#hasState node)) then 
+            (
+              JS.alertStr (Lang.i18nAlertUnexistentState ())
+            )
+          else if (myTM#isInitial node) then 
+            (
+              JS.alertStr (Lang.i18nAlertDelete ()) 
+            )
+          else
+            (
+              self#changeToEditMode;
+
+              let eliminateNodeTransitions (a, b, c) node = 
+                if (a = node || c = node) then
+                  ( 
+                    self#eliminateTransition (a, b, c);
+                  )
+              in 
+
+              myTM <- myTM#eliminateNode node;
+              Set.iter (fun (a,b,c,d,e) -> (eliminateNodeTransitions (a, myTM#makeLabel b d e,c) node)) myTM#representation.transitions;
+
+              Cytoscape.removeNode self#getCy node;
+              self#defineInformationBox
+            )
+        )
+      else ()
+
+    method turnNodeFinal node =
       self#operationTM "make node final";
-      else 
-        (
-          self#changeToEditMode;
+
+      let result = self#checkForSimulation in
+      if result then 
+        ( 
+          if (myTM#isFinal node) then
+            (
+              JS.alertStr (Lang.i18nAlertAlreadyFinal ())
+            )
+          else
+            (
+              self#changeToEditMode;
+
+              myTM <- myTM#changeToFinal node;
+
+              Cytoscape.turnFinal self#getCy node;
+              self#defineInformationBox
+            )
         )
-      if (myTM#isFinal node) then
-        (
-          JS.alertStr (Lang.i18nAlertAlreadyFinal ())
+      else()
+
+    method turnNodeInitial node =
+      self#operationTM "make node initial";
+
+      let result = self#checkForSimulation in
+      if result then 
+        ( 
+          if (myTM#isInitial node) then
+            (
+              JS.alertStr (Lang.i18nAlertAlreadyInitial ())
+            )
+          else
+            (
+              self#changeToEditMode;
+
+              myTM <- myTM#addInitialNode node;
+
+              Cytoscape.resetFaElems self#getCy;
+              self#defineExample;
+              self#defineInformationBox
+            )
         )
-      else
-        (
-          myTM <- (myTM#changeToFinal node);
-          Cytoscape.turnFinal self#getCy node;
-          self#defineInformationBox;
-          if self#getTM#isSimulating then self#changeToEditMode else ()
-        )
+      else()
 
     method removeFinalNode node =
       self#operationTM "make node not final";
-      if (not (myTM#isFinal node)) then
-        (
-          JS.alertStr (Lang.i18nAlertNonFinal ())
+
+      let result = self#checkForSimulation in
+      if result then 
+        ( 
+          if (not (myTM#isFinal node)) then
+            (
+              JS.alertStr (Lang.i18nAlertNonFinal ())
+            )
+          else
+            (
+              self#changeToEditMode;
+
+              myTM <- myTM#removeFinal node;
+
+              Cytoscape.removeFinal self#getCy node;
+              self#defineInformationBox
+            )
         )
-      else
-        (
-          myTM <- (myTM#removeFinal node);
-          Cytoscape.removeFinal self#getCy node;
-          self#defineInformationBox;
-          if self#getTM#isSimulating then self#changeToEditMode else ()
-        ); 
+      else ()
 
     method renameState state =
       self#operationTM "rename node";
-      if self#getTM#isSimulating then 
-        (
-          let confResult = (JS.confirm i18nLeaveSimulationToEdit) in
-          if confResult then 
-            (
-              self#changeToEditMode;
-            )
-          else ()
+     
+      let result = self#checkForSimulation in
+      if result then 
+        ( 
+          let prompt = JS.prompt (Lang.i18nRenameStateQuestion()) state in
+          match Js.Opt.to_option prompt with
+          | None -> ()
+          | Some n -> 
+              let newName = Js.to_string n in
+                if myTM#hasState newName then
+                  (
+                    JS.alertStr (Lang.i18nAlertExists ())
+                  )
+                else
+                  (
+                    self#changeToEditMode;
+
+                    (* Make a function in cytoscape that reset a single node *)
+                    myTM <- myTM#renameNode state newName;
+
+                    Cytoscape.resetFaElems self#getCy;
+                    self#defineExample;
+                    self#defineInformationBox
+                  )
         )
-      else 
-        (
-          self#changeToEditMode;
-        )
-      let prompt = JS.prompt (Lang.i18nRenameStateQuestion()) state in
-      match Js.Opt.to_option prompt with
-      | None -> ()
-      | Some n -> 
-          let newName = (Js.to_string n) in
-            if (myTM#hasState newName) then
-              (JS.alertStr (Lang.i18nAlertExists ()))
-            else
-              (
-                myTM <- myTM#renameNode state newName;
-                Cytoscape.resetFaElems self#getCy;
-                self#defineExample;
-                if self#getTM#isSimulating then self#changeToEditMode else ()
-              )
+      else ()
 
     method createTransition source target =
       self#operationTM "add transition";
-      let promptResult = (JS.prompt (Lang.i18nTextEnterTransitionTM ()) "a/a/R") in
-      match Js.Opt.to_option promptResult with
-      | None -> ()
-      | Some x ->
-          let v = Js.to_string x in
-            let (rdSymbol, wrtSymbol, dir) = myTM#dissectTransitionInput v in
-            let newTrs = (source, str2symb rdSymbol, target, char2symb wrtSymbol, char2direction dir) in
-              if not (stringIsDirection dir) then
-                (
-                  (JS.alertStr (Lang.i18nAlertDirectionWrong ()))
-                )
-              else if (String.length v != 5 && (String.length v != 6 && (String.get v 0) != '~')) then
-                (
-                  (JS.alertStr (Lang.i18nAlertExceededCharacters ()))
-                )
-              else if (myTM#hasTransition newTrs) then
-                (
-                  (JS.alertStr (Lang.i18nAlertTransitionExists ()))
-                )
-              else
-                (
-                  myTM <- myTM#newTransition newTrs;
-                  Cytoscape.addEdgeGeneral self#getCy (source, v, target);
-                  self#defineInformationBox;
-                  if self#getTM#isSimulating then self#changeToEditMode else ()
-                )      
+
+     let result = self#checkForSimulation in
+      if result then 
+        (
+          let promptResult = (JS.prompt (Lang.i18nTextEnterTransitionTM ()) "a/a/R") in
+          match Js.Opt.to_option promptResult with
+          | None -> ()
+          | Some x ->
+              let v = Js.to_string x in
+                let (rdSymbol, wrtSymbol, dir) = myTM#dissectTransitionInput v in
+                let newTrs = (source, str2symb rdSymbol, target, char2symb wrtSymbol, char2direction dir) in
+                  if not (stringIsDirection dir) then
+                    (
+                      (JS.alertStr (Lang.i18nAlertDirectionWrong ()))
+                    )
+                  else if (String.length v != 5 && (String.length v != 6 && (String.get v 0) != '~')) then
+                    (
+                      (JS.alertStr (Lang.i18nAlertExceededCharacters ()))
+                    )
+                  else if (myTM#hasTransition newTrs) then
+                    (
+                      (JS.alertStr (Lang.i18nAlertTransitionExists ()))
+                    )
+                  else
+                    (
+                      self#changeToEditMode;
+
+                      myTM <- myTM#newTransition newTrs;
+
+                      Cytoscape.addEdgeGeneral self#getCy (source, v, target);
+                      self#defineInformationBox
+                    )
+        )
+      else ()
+                  
 
     method eliminateTransition (a, b, c) =
       self#operationTM "erase transition";
-      let (d,e,f) = match String.split_on_char '/' (b)  with
-        | [d;e;f] -> (d,e,f)
-        | _ -> failwith "eliminate transition"
-      in
-      let trans = (a, str2symb d, c, str2symb e, string2direction f) in
-      if (not (myTM#hasTransition trans)) then
+
+      let result = self#checkForSimulation in
+      if result then 
         (
-          JS.alertStr ((Lang.i18nAlertTheTransition ()) ^ "(" ^ a ^ ", " ^ b ^ ", " ^ c ^ ")" ^ (Lang.i18nAlertDoNotExists ()))
+          let (d,e,f) = match String.split_on_char '/' (b)  with
+            | [d;e;f] -> (d,e,f)
+            | _ -> failwith "eliminate transition"
+          in
+          let trans = (a, str2symb d, c, str2symb e, string2direction f) in
+          if (not (myTM#hasTransition trans)) then
+            (
+              JS.alertStr ((Lang.i18nAlertTheTransition ()) ^ "(" ^ a ^ ", " ^ b ^ ", " ^ c ^ ")" ^ (Lang.i18nAlertDoNotExists ()))
+            )
+          else 
+            (
+              self#changeToEditMode;
+
+              myTM <- myTM#eliminateTransition trans;
+
+              Cytoscape.removeEdge self#getCy a b c;
+              self#defineInformationBox
+            )
         )
-      else 
-        (
-          myTM <- (myTM#eliminateTransition trans);
-          Cytoscape.removeEdge self#getCy a b c;
-          self#defineInformationBox;
-          if self#getTM#isSimulating then self#changeToEditMode else ()
-        )
+      else ()
 
     method getWords v = 
       self#operationTM "accepted words";
@@ -1410,34 +1470,19 @@ module Controller
 
     (* General Automata listener setup*)
 
-    ListenersAutomata.addNode := fun x y -> 
-      let promptResult = (JS.prompt (Lang.i18nTextEnterState ()) "A") in
-      match Js.Opt.to_option promptResult with
-      | None -> ()
-      | Some v -> !ctrlL#addNode x y (Js.to_string v)
-      ;;
+    ListenersAutomata.addNode := fun x y -> !ctrlL#addNode x y false false;;
 
     ListenersAutomata.removeNode := fun node -> !ctrlL#eliminateNode node;;
 
-    ListenersAutomata.turnFinal := fun node -> !ctrlL#turnFinalNode node;;
+    ListenersAutomata.turnFinal := fun node -> !ctrlL#turnNodeFinal node;;
 
     ListenersAutomata.removeTypeFinal := fun node -> !ctrlL#removeFinalNode node;;
   
-    ListenersAutomata.turnNodeInitial := fun node -> !ctrlL#addInitialNode node;;
+    ListenersAutomata.turnNodeInitial := fun node -> !ctrlL#turnNodeInitial node;;
   
-    ListenersAutomata.addInitialNode := fun x y ->
-      let promptResult = (JS.prompt (Lang.i18nTextEnterState ()) "A") in
-      match Js.Opt.to_option promptResult with
-      | None -> ()
-      | Some v -> !ctrlL#addInitialNode (Js.to_string v)
-      ;;
+    ListenersAutomata.addInitialNode := fun x y -> !ctrlL#addNode x y true false;;
   
-    ListenersAutomata.addFinalNode := fun x y ->
-      let promptResult = (JS.prompt (Lang.i18nTextEnterState ()) "A") in
-      match Js.Opt.to_option promptResult with
-      | None -> ()
-      | Some v -> !ctrlL#addFinalNode x y (Js.to_string v)
-      ;;
+    ListenersAutomata.addFinalNode := fun x y -> !ctrlL#addNode x y false true;;
       
     ListenersAutomata.addTransition := fun src trg -> !ctrlL#createTransition src trg ;;
 

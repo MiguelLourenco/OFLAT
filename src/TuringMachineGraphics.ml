@@ -210,10 +210,8 @@ struct
 
   (*-------------drawExample-------------*)
   let drawExample cy rep = 
-    Util.println ["in draw"];
     inputNodes cy rep;
-    inputEdges cy rep.transitions;
-    Util.println ["after draw"]
+    inputEdges cy rep.transitions
 
 
   (*-------------numberStates-------------*)
@@ -624,7 +622,6 @@ struct
       method setInitialStep cy =
         let (acc, bestPath, configsList) = self#acceptFull (List.map char2symb !sentence) in
         let (exact, configs, time) = Model.stats() in
-        Util.println [Bool.to_string exact];
         self#setConfigsAndBestPath configsList bestPath acc exact;
         self#initAllMenusAndFeatures cy steps.(0)
   
@@ -644,6 +641,9 @@ struct
         steps <- [||];
         position <- -1;
         isOver <- false;
+        currentState <- "";
+        accepted <- false;
+        finished <- true;
         sentence := [];
         newSentence := "";
         Cytoscape.resetStyle cy Cytoscape.faStyle;

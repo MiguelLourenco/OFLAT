@@ -477,6 +477,9 @@ let i18nAlertArrivalState () =
 let i18nAlertAlreadyFinal () = 
   i18n ["The state is already final"; "O estado já é final"; "L'état est déjà définitif"]
 
+let i18nAlertAlreadyInitial () = 
+  i18n ["The state is already initial"; "O estado já é inicial"; "Le statut est déjà initial"]
+
 let i18nAlertNonFinal () = 
     i18n ["The state is not final"; "O estado não é final"; "L'état n'est pas définitif"]
 
